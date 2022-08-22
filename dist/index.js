@@ -95,14 +95,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getStatusColumnIdFromSettings = exports.getStatusFieldData = exports.mustGetOwnerTypeQuery = exports.updateProjectItemStatus = void 0;
+exports.getStatusColumnIdFromOptions = exports.getStatusFieldData = exports.mustGetOwnerTypeQuery = exports.updateProjectItemStatus = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 // TODO: Ensure this (and the Octokit client) works for non-github.com URLs, as well.
 // https://github.com/orgs|users/<ownerName>/projects/<projectNumber>
 const urlParse = /^(?:https:\/\/)?github\.com\/(?<ownerType>orgs|users)\/(?<ownerName>[^/]+)\/projects\/(?<projectNumber>\d+)/;
 function updateProjectItemStatus() {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     return __awaiter(this, void 0, void 0, function* () {
         const projectUrl = core.getInput('project-url', { required: true });
         const ghToken = core.getInput('github-token', { required: true });
@@ -119,7 +119,7 @@ function updateProjectItemStatus() {
         if (!status) {
             throw new Error('Status is required');
         }
-        core.debug(`Project URL: ${projectUrl}`);
+        core.info(`Project URL: ${projectUrl}`);
         if (!urlMatch) {
             throw new Error(`Invalid project URL: ${projectUrl}. Project URL should match the format https://github.com/<orgs-or-users>/<ownerName>/projects/<projectNumber>`);
         }
@@ -127,14 +127,14 @@ function updateProjectItemStatus() {
         const projectNumber = parseInt((_c = (_b = urlMatch.groups) === null || _b === void 0 ? void 0 : _b.projectNumber) !== null && _c !== void 0 ? _c : '', 10);
         const ownerType = (_d = urlMatch.groups) === null || _d === void 0 ? void 0 : _d.ownerType;
         const ownerTypeQuery = mustGetOwnerTypeQuery(ownerType);
-        core.debug(`Org name: ${ownerName}`);
-        core.debug(`Project number: ${projectNumber}`);
-        core.debug(`Owner type: ${ownerType}`);
-        core.debug(`Item ID: ${itemId}`);
-        core.debug(`Status: ${status}`);
+        core.info(`Org name: ${ownerName}`);
+        core.info(`Project number: ${projectNumber}`);
+        core.info(`Owner type: ${ownerType}`);
+        core.info(`Item ID: ${itemId}`);
+        core.info(`Status: ${status}`);
         const idResp = yield octokit.graphql(`query getProject($ownerName: String!, $projectNumber: Int!) { 
           ${ownerTypeQuery}(login: $ownerName) {
-            projectNext(number: $projectNumber) {
+            projectV2(number: $projectNumber) {
               id
             }
           }
@@ -142,16 +142,36 @@ function updateProjectItemStatus() {
             ownerName,
             projectNumber
         });
-        const projectId = (_e = idResp[ownerTypeQuery]) === null || _e === void 0 ? void 0 : _e.projectNext.id;
-        core.debug(`Project ID: ${projectId}`);
+        core.info(`idResp: ${idResp} ${(_e = idResp[ownerTypeQuery]) === null || _e === void 0 ? void 0 : _e.projectV2}`);
+        const projectId = (_f = idResp[ownerTypeQuery]) === null || _f === void 0 ? void 0 : _f.projectV2.id;
+        core.info(`Project ID: ${projectId}`);
         const fieldResp = yield octokit.graphql(`query ($projectId: ID!) {
           node(id: $projectId) {
-            ... on ProjectNext {
-              fields(first:20) {
+            ... on ProjectV2 {
+              fields(first: 20) {
                 nodes {
-                  id
-                  name
-                  settings
+                  ... on ProjectV2Field {
+                    id
+                    name
+                  }
+                  ... on ProjectV2IterationField {
+                    id
+                    name
+                    configuration {
+                      iterations {
+                        startDate
+                        id
+                      }
+                    }
+                  }
+                  ... on ProjectV2SingleSelectField {
+                    id
+                    name
+                    options {
+                      id
+                      name
+                    }
+                  }
                 }
               }
             }
@@ -160,20 +180,22 @@ function updateProjectItemStatus() {
             projectId
         });
         const statusField = getStatusFieldData(fieldResp.node.fields.nodes);
-        const statusColumnId = getStatusColumnIdFromSettings(statusField.settings, status);
+        const statusColumnId = getStatusColumnIdFromOptions(statusField.options, status);
         const statusFieldId = statusField.id;
-        core.debug(`Status field ID: ${statusFieldId}`);
-        core.debug(`Status column ID: ${statusColumnId}`);
+        core.info(`Status field ID: ${statusFieldId}`);
+        core.info(`Status column ID: ${statusColumnId}`);
         const updateResp = yield octokit.graphql(`mutation ($projectId: ID!, $itemId: ID!, $statusFieldId: ID!, $statusColumnId: String!) {
-        updateProjectNextItemField(
+        updateProjectV2ItemFieldValue(
           input: {
             projectId: $projectId
             itemId: $itemId
             fieldId: $statusFieldId
-            value: $statusColumnId
+            value: {
+              singleSelectOptionId: $statusColumnId
+            }
           }
         ) {
-          projectNextItem {
+          projectV2Item {
             id
           }
         }
@@ -183,7 +205,7 @@ function updateProjectItemStatus() {
             statusFieldId,
             statusColumnId
         });
-        core.debug(`Update response: ${JSON.stringify(updateResp)}`);
+        core.info(`Update response: ${JSON.stringify(updateResp)}`);
     });
 }
 exports.updateProjectItemStatus = updateProjectItemStatus;
@@ -207,20 +229,15 @@ function getStatusFieldData(fieldNodes) {
     return statusField;
 }
 exports.getStatusFieldData = getStatusFieldData;
-function getStatusColumnIdFromSettings(settings, status) {
+function getStatusColumnIdFromOptions(options, status) {
     var _a;
-    const settingsJson = JSON.parse(settings);
-    const options = settingsJson.options;
-    if (!options) {
-        throw new Error(`No options found.`);
-    }
     const statusColumnId = (_a = options.find(option => option.name === status)) === null || _a === void 0 ? void 0 : _a.id;
     if (!statusColumnId) {
-        throw new Error(`Status column ID not found in settings: ${settings}`);
+        throw new Error(`Status column ID not found in settings: ${options}`);
     }
     return statusColumnId;
 }
-exports.getStatusColumnIdFromSettings = getStatusColumnIdFromSettings;
+exports.getStatusColumnIdFromOptions = getStatusColumnIdFromOptions;
 
 
 /***/ }),
@@ -436,6 +453,7 @@ exports.addPath = addPath;
  */
 function getInput(name, options) {
     const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
+    console.log('toto', name, options,`INPUT_${name.replace(/ /g, '_').toUpperCase()}`)
     if (options && options.required && !val) {
         throw new Error(`Input required and not supplied: ${name}`);
     }
@@ -650,6 +668,7 @@ Object.defineProperty(exports, "summary", ({ enumerable: true, get: function () 
 var summary_2 = __nccwpck_require__(1327);
 Object.defineProperty(exports, "markdownSummary", ({ enumerable: true, get: function () { return summary_2.markdownSummary; } }));
 //# sourceMappingURL=core.js.map
+
 
 /***/ }),
 

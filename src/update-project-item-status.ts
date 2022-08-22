@@ -8,13 +8,13 @@ const urlParse =
 
 interface ProjectNodeIDResponse {
   organization?: {
-    projectNext: {
+    projectV2: {
       id: string
     }
   }
 
   user?: {
-    projectNext: {
+    projectV2: {
       id: string
     }
   }
@@ -23,7 +23,7 @@ interface ProjectNodeIDResponse {
 interface ProjectFieldNodes {
   id: string
   name: string
-  settings: string
+  options: StatusOption[]
 }
 interface ProjectFieldNodeIDResponse {
   node: {
@@ -43,10 +43,6 @@ interface ProjectUpdateItemFieldResponse {
 interface StatusOption {
   id: string
   name: string
-  name_html: string
-}
-interface StatusOptions {
-  options: StatusOption[]
 }
 
 export async function updateProjectItemStatus(): Promise<void> {
@@ -70,7 +66,7 @@ export async function updateProjectItemStatus(): Promise<void> {
     throw new Error('Status is required')
   }
 
-  core.debug(`Project URL: ${projectUrl}`)
+  core.info(`Project URL: ${projectUrl}`)
 
   if (!urlMatch) {
     throw new Error(
@@ -83,16 +79,16 @@ export async function updateProjectItemStatus(): Promise<void> {
   const ownerType = urlMatch.groups?.ownerType
   const ownerTypeQuery = mustGetOwnerTypeQuery(ownerType)
 
-  core.debug(`Org name: ${ownerName}`)
-  core.debug(`Project number: ${projectNumber}`)
-  core.debug(`Owner type: ${ownerType}`)
-  core.debug(`Item ID: ${itemId}`)
-  core.debug(`Status: ${status}`)
+  core.info(`Org name: ${ownerName}`)
+  core.info(`Project number: ${projectNumber}`)
+  core.info(`Owner type: ${ownerType}`)
+  core.info(`Item ID: ${itemId}`)
+  core.info(`Status: ${status}`)
 
   const idResp = await octokit.graphql<ProjectNodeIDResponse>(
     `query getProject($ownerName: String!, $projectNumber: Int!) { 
           ${ownerTypeQuery}(login: $ownerName) {
-            projectNext(number: $projectNumber) {
+            projectV2(number: $projectNumber) {
               id
             }
           }
@@ -103,18 +99,39 @@ export async function updateProjectItemStatus(): Promise<void> {
     }
   )
 
-  const projectId = idResp[ownerTypeQuery]?.projectNext.id
-  core.debug(`Project ID: ${projectId}`)
+  core.info(`idResp: ${idResp} ${idResp[ownerTypeQuery]?.projectV2}`)
+
+  const projectId = idResp[ownerTypeQuery]?.projectV2.id
+  core.info(`Project ID: ${projectId}`)
 
   const fieldResp = await octokit.graphql<ProjectFieldNodeIDResponse>(
     `query ($projectId: ID!) {
           node(id: $projectId) {
-            ... on ProjectNext {
-              fields(first:20) {
+            ... on ProjectV2 {
+              fields(first: 20) {
                 nodes {
-                  id
-                  name
-                  settings
+                  ... on ProjectV2Field {
+                    id
+                    name
+                  }
+                  ... on ProjectV2IterationField {
+                    id
+                    name
+                    configuration {
+                      iterations {
+                        startDate
+                        id
+                      }
+                    }
+                  }
+                  ... on ProjectV2SingleSelectField {
+                    id
+                    name
+                    options {
+                      id
+                      name
+                    }
+                  }
                 }
               }
             }
@@ -126,26 +143,28 @@ export async function updateProjectItemStatus(): Promise<void> {
   )
 
   const statusField = getStatusFieldData(fieldResp.node.fields.nodes)
-  const statusColumnId = getStatusColumnIdFromSettings(
-    statusField.settings,
+  const statusColumnId = getStatusColumnIdFromOptions(
+    statusField.options,
     status
   )
   const statusFieldId = statusField.id
 
-  core.debug(`Status field ID: ${statusFieldId}`)
-  core.debug(`Status column ID: ${statusColumnId}`)
+  core.info(`Status field ID: ${statusFieldId}`)
+  core.info(`Status column ID: ${statusColumnId}`)
 
   const updateResp = await octokit.graphql<ProjectUpdateItemFieldResponse>(
     `mutation ($projectId: ID!, $itemId: ID!, $statusFieldId: ID!, $statusColumnId: String!) {
-        updateProjectNextItemField(
+        updateProjectV2ItemFieldValue(
           input: {
             projectId: $projectId
             itemId: $itemId
             fieldId: $statusFieldId
-            value: $statusColumnId
+            value: {
+              singleSelectOptionId: $statusColumnId
+            }
           }
         ) {
-          projectNextItem {
+          projectV2Item {
             id
           }
         }
@@ -158,7 +177,7 @@ export async function updateProjectItemStatus(): Promise<void> {
     }
   )
 
-  core.debug(`Update response: ${JSON.stringify(updateResp)}`)
+  core.info(`Update response: ${JSON.stringify(updateResp)}`)
 }
 
 export function mustGetOwnerTypeQuery(
@@ -190,19 +209,14 @@ export function getStatusFieldData(
   return statusField
 }
 
-export function getStatusColumnIdFromSettings(
-  settings: string,
+export function getStatusColumnIdFromOptions(
+  options: StatusOption[],
   status: string
 ): string {
-  const settingsJson: StatusOptions = JSON.parse(settings)
-  const options = settingsJson.options
-  if (!options) {
-    throw new Error(`No options found.`)
-  }
   const statusColumnId = options.find(option => option.name === status)?.id
 
   if (!statusColumnId) {
-    throw new Error(`Status column ID not found in settings: ${settings}`)
+    throw new Error(`Status column ID not found in settings: ${options}`)
   }
   return statusColumnId
 }

@@ -5,7 +5,7 @@ import {
   updateProjectItemStatus,
   mustGetOwnerTypeQuery,
   getStatusFieldData,
-  getStatusColumnIdFromSettings
+  getStatusColumnIdFromOptions
 } from '../src/update-project-item-status'
 
 describe('updateProjectItemStatus', () => {
@@ -210,7 +210,7 @@ describe('getStatusColumnIdFromSettings', () => {
       '{"options":[{"id":"zzz","name":"Todo","name_html":"Todo"}]}'
     const status = 'Todo'
 
-    const statusColumnId = getStatusColumnIdFromSettings(settings, status)
+    const statusColumnId = getStatusColumnIdFromOptions(settings, status)
 
     expect(statusColumnId).toEqual('zzz')
   })
@@ -220,14 +220,14 @@ describe('getStatusColumnIdFromSettings', () => {
     const status = 'NotFound'
 
     expect(() => {
-      getStatusColumnIdFromSettings(settings, status)
+      getStatusColumnIdFromOptions(settings, status)
     }).toThrow(`Status column ID not found in settings: ${settings}`)
   })
   test('throw an error if no options are found', async () => {
     const settings = '{}'
     const status = 'NotFound'
     expect(() => {
-      getStatusColumnIdFromSettings(settings, status)
+      getStatusColumnIdFromOptions(settings, status)
     }).toThrow(`No options found.`)
   })
 })
