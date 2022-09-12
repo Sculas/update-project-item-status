@@ -1,5 +1,5 @@
 name: 'Update GitHub Project V2 Item Status'
-description: 'TypeScript action to change GitHub Projects V@ Items Status'
+description: 'TypeScript action to change GitHub Projects V2 Items Status'
 author: 'Sculas'
 branding:
   icon: table
