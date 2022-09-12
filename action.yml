@@ -1,6 +1,6 @@
-name: 'Update GitHub Project(beta) item status'
-description: 'TypeScript action to change GitHub Projects(beta) items status'
-author: 'kalgurn'
+name: 'Update GitHub Project V2 Item Status'
+description: 'TypeScript action to change GitHub Projects V@ Items Status'
+author: 'Sculas'
 branding:
   icon: table
 inputs:
